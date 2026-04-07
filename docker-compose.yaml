@@ -1,0 +1,37 @@
+services:
+  mmgate:
+    build: .
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/etc/mmgate/config.yaml:ro
+    environment:
+      - N8N_BRIDGE_SECRET
+      - LAMBDA_BRIDGE_SECRET
+    depends_on:
+      - mattermost
+    restart: unless-stopped
+
+  mattermost:
+    image: mattermost/mattermost-enterprise-edition:latest
+    ports:
+      - "8065:8065"
+    environment:
+      - MM_SQLSETTINGS_DRIVERNAME=postgres
+      - MM_SQLSETTINGS_DATASOURCE=postgres://mmuser:mmpass@db:5432/mattermost?sslmode=disable
+    depends_on:
+      - db
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=mmuser
+      - POSTGRES_PASSWORD=mmpass
+      - POSTGRES_DB=mattermost
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  pgdata:
