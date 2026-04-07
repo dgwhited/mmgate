@@ -26,7 +26,7 @@ func TestProxy_StripsPrefixAndForwards(t *testing.T) {
 		}
 
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"status":"ok"}`))
+		_, _ = w.Write([]byte(`{"status":"ok"}`))
 	}))
 	defer upstream.Close()
 

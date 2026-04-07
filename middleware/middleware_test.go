@@ -46,7 +46,7 @@ func TestRequestID_PreservesExisting(t *testing.T) {
 func TestLogging_SetsStatusCode(t *testing.T) {
 	handler := Logging(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
-		w.Write([]byte("created"))
+		_, _ = w.Write([]byte("created"))
 	}))
 
 	req := httptest.NewRequest("POST", "/test", nil)

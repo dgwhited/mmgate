@@ -46,7 +46,7 @@ type LoggingConfig struct {
 }
 
 func Load(path string) (*Config, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- config path comes from CLI flag, not user input
 	if err != nil {
 		return nil, fmt.Errorf("reading config file: %w", err)
 	}

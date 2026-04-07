@@ -6,6 +6,7 @@ import (
 	"testing"
 )
 
+
 func TestLoad_ValidConfig(t *testing.T) {
 	content := `
 clients:
@@ -40,8 +41,7 @@ clients:
 }
 
 func TestLoad_EnvVarExpansion(t *testing.T) {
-	os.Setenv("TEST_SECRET", "expanded-secret")
-	defer os.Unsetenv("TEST_SECRET")
+	t.Setenv("TEST_SECRET", "expanded-secret")
 
 	content := `
 clients:

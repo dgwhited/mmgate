@@ -8,9 +8,9 @@ import (
 )
 
 type Handler struct {
-	upstreamURL  string
-	healthPath   string
-	httpClient   *http.Client
+	upstreamURL string
+	healthPath  string
+	httpClient  *http.Client
 }
 
 func NewHandler(upstreamURL, healthPath string, timeout time.Duration) *Handler {
@@ -23,31 +23,33 @@ func NewHandler(upstreamURL, healthPath string, timeout time.Duration) *Handler 
 	}
 }
 
-func (h *Handler) Healthz(w http.ResponseWriter, r *http.Request) {
+func writeJSON(w http.ResponseWriter, status int, data map[string]string) {
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+	if status != http.StatusOK {
+		w.WriteHeader(status)
+	}
+	_ = json.NewEncoder(w).Encode(data)
+}
+
+func (h *Handler) Healthz(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *Handler) Readyz(w http.ResponseWriter, r *http.Request) {
 	resp, err := h.httpClient.Get(h.upstreamURL + h.healthPath)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"status": "unavailable",
 			"error":  fmt.Sprintf("upstream check failed: %v", err),
 		})
 		return
 	}
-	resp.Body.Close()
+	_ = resp.Body.Close()
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "ok"})
+		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	} else {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusServiceUnavailable)
-		json.NewEncoder(w).Encode(map[string]string{
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{
 			"status": "unavailable",
 			"error":  fmt.Sprintf("upstream returned %d", resp.StatusCode),
 		})
