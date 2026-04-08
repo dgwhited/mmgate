@@ -90,7 +90,7 @@ func setDefaults(cfg *Config) {
 		cfg.Upstream.HealthPath = "/api/v4/system/ping"
 	}
 	if cfg.Security.TimestampTolerance == 0 {
-		cfg.Security.TimestampTolerance = 300
+		cfg.Security.TimestampTolerance = 30
 	}
 	if cfg.Logging.Level == "" {
 		cfg.Logging.Level = "info"
@@ -110,6 +110,9 @@ func validate(cfg *Config) error {
 		}
 		if c.Secret == "" {
 			return fmt.Errorf("client[%d] (%s): secret is required", i, c.ID)
+		}
+		if len(c.Secret) < 32 {
+			return fmt.Errorf("client[%d] (%s): secret must be at least 32 characters (got %d)", i, c.ID, len(c.Secret))
 		}
 		if len(c.AllowedPaths) == 0 {
 			return fmt.Errorf("client[%d] (%s): at least one allowed_path is required", i, c.ID)

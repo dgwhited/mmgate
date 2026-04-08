@@ -11,7 +11,7 @@ func TestLoad_ValidConfig(t *testing.T) {
 	content := `
 clients:
   - id: "test"
-    secret: "mysecret"
+    secret: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
     allowed_paths: ["/hooks/*"]
     rate_limit: 60
 `
@@ -35,13 +35,13 @@ clients:
 	if cfg.Upstream.URL != "http://localhost:8065" {
 		t.Errorf("expected default upstream URL, got %s", cfg.Upstream.URL)
 	}
-	if cfg.Security.TimestampTolerance != 300 {
-		t.Errorf("expected default timestamp tolerance 300, got %d", cfg.Security.TimestampTolerance)
+	if cfg.Security.TimestampTolerance != 30 {
+		t.Errorf("expected default timestamp tolerance 30, got %d", cfg.Security.TimestampTolerance)
 	}
 }
 
 func TestLoad_EnvVarExpansion(t *testing.T) {
-	t.Setenv("TEST_SECRET", "expanded-secret")
+	t.Setenv("TEST_SECRET", "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4")
 
 	content := `
 clients:
@@ -55,8 +55,8 @@ clients:
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if cfg.Clients[0].Secret != "expanded-secret" {
-		t.Errorf("expected expanded-secret, got %s", cfg.Clients[0].Secret)
+	if cfg.Clients[0].Secret != "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4" {
+		t.Errorf("expected expanded secret, got %s", cfg.Clients[0].Secret)
 	}
 }
 
@@ -86,11 +86,25 @@ clients:
 	}
 }
 
+func TestLoad_ShortSecret(t *testing.T) {
+	content := `
+clients:
+  - id: "test"
+    secret: "tooshort"
+    allowed_paths: ["/hooks/*"]
+`
+	path := writeTemp(t, content)
+	_, err := Load(path)
+	if err == nil {
+		t.Error("expected error for short secret")
+	}
+}
+
 func TestLoad_MissingPaths(t *testing.T) {
 	content := `
 clients:
   - id: "test"
-    secret: "mysecret"
+    secret: "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4"
 `
 	path := writeTemp(t, content)
 	_, err := Load(path)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -57,5 +58,34 @@ func TestReadyz_UpstreamDown(t *testing.T) {
 
 	if rr.Code != http.StatusServiceUnavailable {
 		t.Errorf("expected 503, got %d", rr.Code)
+	}
+}
+
+func TestReadyz_CachesResult(t *testing.T) {
+	var hits atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer upstream.Close()
+
+	h := NewHandler(upstream.URL, "/api/v4/system/ping", 5*time.Second)
+
+	// First call should hit upstream
+	rr := httptest.NewRecorder()
+	h.Readyz(rr, httptest.NewRequest("GET", "/readyz", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+
+	// Second call within TTL should use cache
+	rr = httptest.NewRecorder()
+	h.Readyz(rr, httptest.NewRequest("GET", "/readyz", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+
+	if got := hits.Load(); got != 1 {
+		t.Errorf("expected 1 upstream hit, got %d", got)
 	}
 }
