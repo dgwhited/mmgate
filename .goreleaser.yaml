@@ -9,12 +9,20 @@ builds:
     goarch:
       - amd64
       - arm64
+    flags:
+      - -trimpath
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}}
+    # Reproducible builds: stamp the binary with the commit time, not build time.
+    mod_timestamp: "{{ .CommitTimestamp }}"
 
 archives:
-  - format: tar.gz
+  # `format` (singular) was deprecated in goreleaser v2.6; it is a list now.
+  - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+
+sboms:
+  - artifacts: archive
 
 checksum:
   name_template: "checksums.txt"
@@ -27,13 +35,25 @@ changelog:
       - "^test:"
       - "^ci:"
 
-dockers:
-  - image_templates:
-      - "ghcr.io/dgwhited/mmgate:{{ .Version }}"
-      - "ghcr.io/dgwhited/mmgate:latest"
+# `dockers` was deprecated in favour of `dockers_v2`. Beyond the rename, the
+# legacy block defaulted to linux/amd64 only, so arm64 users silently pulled an
+# amd64 image. dockers_v2 emits one multi-arch manifest.
+dockers_v2:
+  - id: mmgate
     dockerfile: Dockerfile
-    build_flag_templates:
-      - "--label=org.opencontainers.image.created={{.Date}}"
-      - "--label=org.opencontainers.image.title={{.ProjectName}}"
-      - "--label=org.opencontainers.image.revision={{.FullCommit}}"
-      - "--label=org.opencontainers.image.version={{.Version}}"
+    images:
+      - "ghcr.io/dgwhited/mmgate"
+    tags:
+      - "{{ .Version }}"
+      - "latest"
+    platforms:
+      - linux/amd64
+      - linux/arm64
+    annotations:
+      org.opencontainers.image.created: "{{ .Date }}"
+      org.opencontainers.image.title: "{{ .ProjectName }}"
+      org.opencontainers.image.description: "HMAC-authenticated reverse proxy for private Mattermost servers"
+      org.opencontainers.image.revision: "{{ .FullCommit }}"
+      org.opencontainers.image.version: "{{ .Version }}"
+      org.opencontainers.image.source: "{{ .GitURL }}"
+      org.opencontainers.image.licenses: "MIT"

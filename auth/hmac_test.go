@@ -22,7 +22,8 @@ func setupMiddleware() (*HMACMiddleware, []*Client) {
 func signRequest(method, path, body, secret string, ts int64) (string, string) {
 	tsStr := fmt.Sprintf("%d", ts)
 	signingString := fmt.Sprintf("%s.%s.%s.%s", tsStr, method, path, body)
-	sig := computeHMAC(signingString, secret)
+	// The header carries the hex form; the middleware decodes it.
+	sig := computeHMACHex(signingString, secret)
 	return tsStr, sig
 }
 

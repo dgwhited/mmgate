@@ -1,5 +1,8 @@
 services:
   mmgate:
+    # The Dockerfile copies a pre-built binary (that is how goreleaser
+    # assembles its build context), so build the linux binary first:
+    #   make docker-build      # or: GOOS=linux CGO_ENABLED=0 go build -o mmgate .
     build: .
     ports:
       - "8080:8080"
@@ -8,9 +11,24 @@ services:
     environment:
       - N8N_BRIDGE_SECRET
       - LAMBDA_BRIDGE_SECRET
+    # Declared here as well as in the Dockerfile: podman does not wire an
+    # image's HEALTHCHECK into container monitoring the way docker does, so
+    # under podman-compose this stanza is what actually gets probed.
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
     depends_on:
-      - mattermost
+      mattermost:
+        condition: service_started
     restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
 
   mattermost:
     image: mattermost/mattermost-enterprise-edition:latest
@@ -20,17 +38,23 @@ services:
       - MM_SQLSETTINGS_DRIVERNAME=postgres
       - MM_SQLSETTINGS_DATASOURCE=postgres://mmuser:mmpass@db:5432/mattermost?sslmode=disable
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     restart: unless-stopped
 
   db:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     environment:
       - POSTGRES_USER=mmuser
       - POSTGRES_PASSWORD=mmpass
       - POSTGRES_DB=mattermost
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mmuser -d mattermost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     restart: unless-stopped
 
 volumes:

@@ -1,10 +1,12 @@
 package auth
 
 import (
+	"bytes"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -49,31 +51,47 @@ func (m *HMACMiddleware) Wrap(next http.Handler) http.Handler {
 		}
 
 		now := time.Now().Unix()
-		drift := time.Duration(math.Abs(float64(now-ts))) * time.Second
-		if drift > m.timestampTolerance {
+		drift := now - ts
+		if drift < 0 {
+			drift = -drift
+		}
+		if time.Duration(drift)*time.Second > m.timestampTolerance {
 			slog.Warn("request timestamp outside tolerance",
-				"drift_seconds", drift.Seconds(),
+				"drift_seconds", drift,
 				"tolerance_seconds", m.timestampTolerance.Seconds(),
 			)
 			http.Error(w, "timestamp outside tolerance window", http.StatusUnauthorized)
 			return
 		}
 
-		// Parse signature
+		// Parse signature. Decoding up front rejects malformed or
+		// wrong-length hex before any secret is involved.
 		if !strings.HasPrefix(sigHeader, signaturePrefix) {
 			http.Error(w, "signature must start with sha256=", http.StatusBadRequest)
 			return
 		}
-		signature := strings.TrimPrefix(sigHeader, signaturePrefix)
-
-		// Read body (with size limit)
-		body, err := io.ReadAll(io.LimitReader(r.Body, m.maxBodyBytes+1))
+		signature, err := hex.DecodeString(strings.TrimPrefix(sigHeader, signaturePrefix))
 		if err != nil {
-			http.Error(w, "failed to read request body", http.StatusBadRequest)
+			// A non-hex signature is an authentication failure, not a
+			// separately-reportable request defect: answer it exactly like a
+			// wrong signature so the two are indistinguishable to a caller.
+			slog.Warn("signature is not valid hex", "path", r.URL.Path)
+			http.Error(w, "invalid signature", http.StatusUnauthorized)
 			return
 		}
-		if int64(len(body)) > m.maxBodyBytes {
-			http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+
+		// Read body, bounded by max_body_bytes. MaxBytesReader also caps what
+		// the server will read off the wire, and surfaces overflow as a
+		// *http.MaxBytesError.
+		r.Body = http.MaxBytesReader(w, r.Body, m.maxBodyBytes)
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			var maxErr *http.MaxBytesError
+			if errors.As(err, &maxErr) {
+				http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+				return
+			}
+			http.Error(w, "failed to read request body", http.StatusBadRequest)
 			return
 		}
 
@@ -106,7 +124,7 @@ func (m *HMACMiddleware) Wrap(next http.Handler) http.Handler {
 		slog.Debug("request authenticated", "client", client.ID, "path", mmPath)
 
 		// Restore body for downstream handlers
-		r.Body = io.NopCloser(strings.NewReader(string(body)))
+		r.Body = io.NopCloser(bytes.NewReader(body))
 
 		// Set client in context
 		ctx := ContextWithClient(r.Context(), client)

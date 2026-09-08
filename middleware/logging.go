@@ -18,6 +18,14 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
+// Unwrap exposes the underlying ResponseWriter to http.ResponseController,
+// which is how httputil.ReverseProxy reaches Flush and Hijack. Without it,
+// wrapping the writer here would silently break streaming responses and
+// websocket upgrades proxied to Mattermost (e.g. /api/v4/websocket).
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
+}
+
 func Logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -37,11 +45,12 @@ func Logging(next http.Handler) http.Handler {
 			attrs = append(attrs, "client", client.ID)
 		}
 
-		if rw.statusCode >= 500 {
+		switch {
+		case rw.statusCode >= 500:
 			slog.Error("request", attrs...)
-		} else if rw.statusCode >= 400 {
+		case rw.statusCode >= 400:
 			slog.Warn("request", attrs...)
-		} else {
+		default:
 			slog.Info("request", attrs...)
 		}
 	})
