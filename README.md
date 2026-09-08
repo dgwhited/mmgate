@@ -57,11 +57,37 @@ docker run -p 8080:8080 \
   mmgate:latest
 ```
 
-The image runs as UID 10001, not root, and ships a `HEALTHCHECK` against
+The image runs as UID 10001, not root, and declares a `HEALTHCHECK` against
 `/healthz`. Mount your config read-only and make sure it is readable by that
 UID. Published images (`ghcr.io/dgwhited/mmgate`) are multi-arch —
 `linux/amd64` and `linux/arm64` — and releases carry an SBOM plus build
 provenance attestation.
+
+mmgate needs no write access and no capabilities, so run it locked down:
+
+```bash
+podman run --read-only --cap-drop=ALL --security-opt no-new-privileges ...
+```
+
+Verified working under all three. `docker-compose.yaml` applies them already.
+
+#### Podman notes
+
+`make docker-build` detects podman and adapts, but two differences are worth
+knowing if you run podman by hand:
+
+- **Build with `--format docker`.** Podman defaults to the OCI image format,
+  which drops `HEALTHCHECK` (`"not supported for OCI image format"`). The
+  Makefile passes this flag automatically.
+- **Podman does not run an image's `HEALTHCHECK`.** Unlike docker, podman only
+  monitors health when the container is created with `--health-cmd`, so the
+  image-declared probe is inert under a bare `podman run`. The `healthcheck:`
+  stanza in `docker-compose.yaml` covers this for `podman-compose`; for a
+  one-off container pass it explicitly:
+
+  ```bash
+  podman run --health-cmd 'wget -qO- http://127.0.0.1:8080/healthz >/dev/null || exit 1' ...
+  ```
 
 If you want a smaller attack surface and don't need a shell for debugging,
 `gcr.io/distroless/static:nonroot` is a drop-in alternative base: it already
@@ -70,8 +96,11 @@ includes CA certificates and a non-root user.
 ### Docker Compose
 
 ```bash
+# The Dockerfile copies a pre-built binary, so build it first.
+make docker-build
+
 # Starts mmgate + Mattermost + Postgres
-docker compose up
+docker compose up      # or: podman-compose up
 ```
 
 ## Configuration

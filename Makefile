@@ -38,8 +38,21 @@ check: lint test security
 clean:
 	rm -f $(BINARY) coverage.out
 
+# Prefer docker, fall back to podman. Podman defaults to the OCI image format,
+# which silently drops HEALTHCHECK ("not supported for OCI image format"), so
+# ask it for the docker format explicitly. Buildx (used by goreleaser in CI)
+# already produces docker-format images.
+CONTAINER_ENGINE ?= $(shell command -v docker >/dev/null 2>&1 && echo docker || echo podman)
+ifeq ($(CONTAINER_ENGINE),podman)
+CONTAINER_BUILD_FLAGS := --format docker
+endif
+
+# The Dockerfile copies a pre-built binary, matching how goreleaser assembles
+# the build context, so cross-compile for linux first.
 docker-build:
-	docker build -t $(BINARY):latest .
+	GOOS=linux GOARCH=$(shell $(GO) env GOARCH) CGO_ENABLED=0 \
+		$(GO) build -trimpath -ldflags="-s -w" -o $(BINARY) .
+	$(CONTAINER_ENGINE) build $(CONTAINER_BUILD_FLAGS) -t $(BINARY):latest .
 
 run: build
 	./$(BINARY) --config config.yaml
