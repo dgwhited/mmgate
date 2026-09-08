@@ -1,7 +1,8 @@
 module github.com/dgwhited/mmgate
 
-go 1.25.9
+go 1.27.1
 
-require gopkg.in/yaml.v3 v3.0.1
-
-require golang.org/x/time v0.15.0
+require (
+	golang.org/x/time v0.16.0
+	gopkg.in/yaml.v3 v3.0.1
+)
