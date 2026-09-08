@@ -27,6 +27,13 @@ sboms:
 checksum:
   name_template: "checksums.txt"
 
+release:
+  # Without this, goreleaser defaults to prerelease=false and GitHub promotes a
+  # release candidate to "Latest" — v0.2.0-rc.2 became the latest release, which
+  # is what anyone asking the API for the newest release would have received.
+  # `auto` reads the semver prerelease component from the tag (v0.2.0-rc.2).
+  prerelease: auto
+
 changelog:
   sort: asc
   filters:
