@@ -45,7 +45,10 @@ dockers_v2:
       - "ghcr.io/dgwhited/mmgate"
     tags:
       - "{{ .Version }}"
-      - "latest"
+      # Guard `latest` so a prerelease (e.g. v0.2.0-rc.1) cannot claim it.
+      # .Prerelease is empty for a normal release, and goreleaser drops
+      # empty tags.
+      - "{{ if not .Prerelease }}latest{{ end }}"
     platforms:
       - linux/amd64
       - linux/arm64
