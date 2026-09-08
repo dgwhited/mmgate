@@ -27,7 +27,7 @@ A secure HMAC-authenticated reverse proxy for private Mattermost servers. Lets e
 - **Structured JSON logging** — with request IDs and client attribution
 - **Health checks** — `/healthz` (liveness) and `/readyz` (upstream reachability)
 - **Single binary** — zero runtime dependencies, easy to deploy
-- **~500 lines of Go** — minimal, auditable codebase
+- **Small, auditable codebase** — stdlib-only apart from `yaml.v3` and `x/time`
 
 ## Quick Start
 
@@ -57,6 +57,16 @@ docker run -p 8080:8080 \
   mmgate:latest
 ```
 
+The image runs as UID 10001, not root, and ships a `HEALTHCHECK` against
+`/healthz`. Mount your config read-only and make sure it is readable by that
+UID. Published images (`ghcr.io/dgwhited/mmgate`) are multi-arch —
+`linux/amd64` and `linux/arm64` — and releases carry an SBOM plus build
+provenance attestation.
+
+If you want a smaller attack surface and don't need a shell for debugging,
+`gcr.io/distroless/static:nonroot` is a drop-in alternative base: it already
+includes CA certificates and a non-root user.
+
 ### Docker Compose
 
 ```bash
@@ -71,9 +81,12 @@ See [`config.example.yaml`](config.example.yaml) for a fully documented example.
 ```yaml
 server:
   listen_addr: ":8080"
+  read_header_timeout: 10s   # slowloris defence
   read_timeout: 30s
   write_timeout: 30s
-  max_body_bytes: 10485760  # 10MB
+  idle_timeout: 120s
+  max_header_bytes: 1048576  # 1MB
+  max_body_bytes: 10485760   # 10MB
 
 upstream:
   url: "http://localhost:8065"
@@ -81,7 +94,7 @@ upstream:
   health_path: "/api/v4/system/ping"
 
 security:
-  timestamp_tolerance: 300  # seconds
+  timestamp_tolerance: 30  # seconds (also the replay window)
 
 clients:
   - id: "n8n-production"
@@ -118,10 +131,28 @@ The **signing string** format is:
 
 mmgate verifies:
 
-1. **Timestamp** — rejects requests with clock drift > tolerance (default 5 minutes)
+1. **Timestamp** — rejects requests with clock drift > tolerance (default **30 seconds**)
 2. **Signature** — HMAC-SHA256 with constant-time comparison; identifies the client by which secret matches
 3. **Path** — checks the Mattermost path against the client's `allowed_paths` globs
 4. **Rate limit** — enforces the client's per-minute request limit
+
+### Known limits
+
+Worth understanding before you rely on this:
+
+- **Replay within the tolerance window.** Verification is stateless — there is no
+  nonce cache — so a captured request can be replayed until its timestamp falls
+  outside `timestamp_tolerance`. Keep that value as small as your callers' clock
+  accuracy allows; the default is 30s.
+- **`X-Forwarded-For` is partly caller-controlled.** mmgate appends the real peer
+  address as the *last* element of the chain, so the final entry is trustworthy,
+  but any earlier entries were supplied by the caller. Read the last element, not
+  the first, when attributing a request.
+- **Secrets must be unique per client.** The client is identified by *which secret
+  verifies the signature*, so two clients sharing a secret would be
+  indistinguishable. This is rejected at config load time.
+- **No TLS termination.** mmgate speaks plain HTTP; run it behind a TLS proxy
+  (see [Deployment](#deployment)).
 
 ## API Endpoints
 
@@ -208,12 +239,20 @@ bridge.example.com {
 ## Development
 
 ```bash
-make build       # Build binary
-make test        # Run tests
-make lint        # Run go vet
-make clean       # Remove binary
+make build         # Build binary
+make test          # Run tests with -race and coverage
+make tidy          # go mod tidy
+make lint          # go vet + golangci-lint (pinned version)
+make security      # gosec + govulncheck (pinned versions)
+make check         # Everything CI runs: lint + test + security
+make clean         # Remove binary and coverage output
 make docker-build  # Build Docker image
 ```
+
+Tool versions are pinned in the `Makefile` and mirrored in
+`.github/workflows/ci.yaml`; keep the two in sync.
+
+`mmgate --version` reports the version, commit and Go toolchain of a build.
 
 ## License
 

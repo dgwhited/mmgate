@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/hex"
 	"path"
 	"strings"
 
@@ -44,11 +43,14 @@ func NewClients(cfgs []config.ClientConfig) []*Client {
 
 // VerifySignature checks if the given signature matches the HMAC-SHA256
 // of the signing string using this client's secret. Returns true if valid.
-func (c *Client) VerifySignature(signingString, signature string) bool {
+//
+// signature is the raw digest bytes (the caller decodes the hex form), so a
+// wrong-length signature is rejected by hmac.Equal rather than by an
+// encoding-dependent string comparison.
+func (c *Client) VerifySignature(signingString string, signature []byte) bool {
 	mac := hmac.New(sha256.New, c.secret)
 	mac.Write([]byte(signingString))
-	expected := hex.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(expected), []byte(signature))
+	return hmac.Equal(mac.Sum(nil), signature)
 }
 
 // IsPathAllowed checks if the given request path matches any of the
@@ -67,7 +69,7 @@ func (c *Client) IsPathAllowed(reqPath string) bool {
 
 // MatchClient finds the client whose secret validates the given signing string
 // and signature. Returns nil if no client matches.
-func MatchClient(clients []*Client, signingString, signature string) *Client {
+func MatchClient(clients []*Client, signingString string, signature []byte) *Client {
 	for _, c := range clients {
 		if c.VerifySignature(signingString, signature) {
 			return c

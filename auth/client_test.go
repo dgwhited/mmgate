@@ -10,10 +10,16 @@ import (
 	"github.com/dgwhited/mmgate/config"
 )
 
-func computeHMAC(message, secret string) string {
+// computeHMAC returns the raw digest bytes, matching what VerifySignature and
+// MatchClient now accept (the HTTP layer hex-decodes the header for them).
+func computeHMAC(message, secret string) []byte {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write([]byte(message))
-	return hex.EncodeToString(mac.Sum(nil))
+	return mac.Sum(nil)
+}
+
+func computeHMACHex(message, secret string) string {
+	return hex.EncodeToString(computeHMAC(message, secret))
 }
 
 func TestVerifySignature(t *testing.T) {
@@ -29,7 +35,7 @@ func TestVerifySignature(t *testing.T) {
 		t.Error("expected valid signature to pass")
 	}
 
-	if c.VerifySignature(signingString, "invalidsignature") {
+	if c.VerifySignature(signingString, []byte("invalidsignature")) {
 		t.Error("expected invalid signature to fail")
 	}
 
@@ -87,7 +93,7 @@ func TestMatchClient(t *testing.T) {
 	}
 
 	// Should match nobody
-	matched = MatchClient(clients, signingString, "bogus")
+	matched = MatchClient(clients, signingString, []byte("bogus"))
 	if matched != nil {
 		t.Errorf("expected nil, got %v", matched.ID)
 	}

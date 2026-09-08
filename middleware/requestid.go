@@ -22,6 +22,8 @@ func RequestID(next http.Handler) http.Handler {
 
 func generateID() string {
 	b := make([]byte, 16)
-	rand.Read(b)
+	// crypto/rand.Read never returns an error on supported platforms; assign
+	// the results so errcheck/gosec do not flag the bare call.
+	_, _ = rand.Read(b)
 	return hex.EncodeToString(b)
 }

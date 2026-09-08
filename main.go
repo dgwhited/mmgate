@@ -2,12 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"syscall"
 	"time"
 
@@ -18,9 +20,24 @@ import (
 	"github.com/dgwhited/mmgate/proxy"
 )
 
+// Populated at release time via -ldflags "-X main.version=... -X main.commit=..."
+// (see .goreleaser.yaml). Defaults apply to `go build` and `go install`.
+var (
+	version = "dev"
+	commit  = "none"
+)
+
+const proxyPrefix = "/proxy"
+
 func main() {
 	configPath := flag.String("config", "config.yaml", "path to config file")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Printf("mmgate %s (commit %s, %s)\n", version, commit, runtime.Version())
+		return
+	}
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
@@ -64,17 +81,29 @@ func main() {
 	// Rate limiter (applied after HMAC auth identifies the client)
 	rateLimiter := middleware.NewRateLimiter()
 
-	// Proxy route: HMAC auth -> rate limit -> proxy
-	mux.Handle("/proxy/", hmacMiddleware.Wrap(rateLimiter.Wrap(proxyHandler)))
+	// Proxy route: HMAC auth -> rate limit -> strip prefix -> proxy.
+	//
+	// The prefix strip must come last: the HMAC signing string covers the full
+	// "/proxy/..." path as the client sent it, so auth has to run before the
+	// path is rewritten. http.StripPrefix rewrites URL.Path and URL.RawPath
+	// together, which the old in-Director TrimPrefix did not.
+	mux.Handle(proxyPrefix+"/", hmacMiddleware.Wrap(
+		rateLimiter.Wrap(
+			http.StripPrefix(proxyPrefix, proxyHandler),
+		),
+	))
 
 	// Wrap everything with logging and request ID
-	handler2 := middleware.RequestID(middleware.Logging(mux))
+	rootHandler := middleware.RequestID(middleware.Logging(mux))
 
 	server := &http.Server{
-		Addr:         cfg.Server.ListenAddr,
-		Handler:      handler2,
-		ReadTimeout:  cfg.Server.ReadTimeout,
-		WriteTimeout: cfg.Server.WriteTimeout,
+		Addr:              cfg.Server.ListenAddr,
+		Handler:           rootHandler,
+		ReadHeaderTimeout: cfg.Server.ReadHeaderTimeout,
+		ReadTimeout:       cfg.Server.ReadTimeout,
+		WriteTimeout:      cfg.Server.WriteTimeout,
+		IdleTimeout:       cfg.Server.IdleTimeout,
+		MaxHeaderBytes:    cfg.Server.MaxHeaderBytes,
 	}
 
 	// Graceful shutdown
@@ -82,8 +111,12 @@ func main() {
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
 	go func() {
-		slog.Info("starting mmgate", "addr", cfg.Server.ListenAddr, "upstream", cfg.Upstream.URL)
-		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		slog.Info("starting mmgate",
+			"version", version,
+			"addr", cfg.Server.ListenAddr,
+			"upstream", cfg.Upstream.URL,
+		)
+		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("server error", "error", err)
 			os.Exit(1)
 		}
