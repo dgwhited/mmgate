@@ -37,6 +37,7 @@ check: lint test security
 
 clean:
 	rm -f $(BINARY) coverage.out
+	rm -rf linux dist
 
 # Prefer docker, fall back to podman. Podman defaults to the OCI image format,
 # which silently drops HEALTHCHECK ("not supported for OCI image format"), so
@@ -47,11 +48,17 @@ ifeq ($(CONTAINER_ENGINE),podman)
 CONTAINER_BUILD_FLAGS := --format docker
 endif
 
-# The Dockerfile copies a pre-built binary, matching how goreleaser assembles
-# the build context, so cross-compile for linux first.
+HOST_ARCH := $(shell $(GO) env GOARCH)
+
+# Mirror the build context goreleaser's dockers_v2 assembles: the binary lives
+# at linux/<arch>/mmgate, not at the context root. Staging it the same way
+# locally keeps `make docker-build` and the release pipeline building the exact
+# same Dockerfile, so a break shows up here rather than during a release.
 docker-build:
-	GOOS=linux GOARCH=$(shell $(GO) env GOARCH) CGO_ENABLED=0 \
-		$(GO) build -trimpath -ldflags="-s -w" -o $(BINARY) .
+	rm -rf linux
+	mkdir -p linux/$(HOST_ARCH)
+	GOOS=linux GOARCH=$(HOST_ARCH) CGO_ENABLED=0 \
+		$(GO) build -trimpath -ldflags="-s -w" -o linux/$(HOST_ARCH)/mmgate .
 	$(CONTAINER_ENGINE) build $(CONTAINER_BUILD_FLAGS) -t $(BINARY):latest .
 
 run: build

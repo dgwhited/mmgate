@@ -5,5 +5,8 @@ dist/
 config.yaml
 coverage.out
 
+# Staging dir for the container build context (mirrors dockers_v2 layout).
+/linux/
+
 # Design docs and threat models are kept out of the repo by preference.
 docs/
